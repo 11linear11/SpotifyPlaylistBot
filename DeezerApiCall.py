@@ -343,23 +343,3 @@ class DeemixDownloader:
             return False
 
 
-# if __name__ == '__main__':
-#     downloader = DeemixDownloader()
-    
-#     if not downloader.is_configured():
-#         print("⚠️  First time setup required!")
-#         if not downloader.setup_arl():
-#             exit(1)
-#     else:
-#         print("✅ ARL token loaded from config\n")
-    
-#     try:
-#         # دانلود با کیفیت 128kbps (مناسب برای حساب رایگان)
-#         file_path = downloader.download_track(
-#             'Vaghti Az Hame Khastam', 
-#             'Maslak',
-#             bitrate='128'  # کیفیت پایین‌تر
-#         )
-        
-#     except Exception as e:
-#         print(f"\n❌ Error: {e}")

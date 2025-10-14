@@ -5,9 +5,11 @@ A powerful Telegram bot that monitors Spotify playlists and automatically downlo
 ## ✨ Features
 
 - 🎼 **Multiple Playlist Support**: Monitor multiple Spotify playlists simultaneously
+- 📺 **Channel Mapping**: Link each playlist to a specific Telegram channel
+- 🔗 **Flexible Channel Management**: Easily change which channel receives tracks from which playlist
 - 🤖 **Bot Management**: Add/remove playlists directly through Telegram commands
 - ⏰ **Automatic Monitoring**: Checks for new tracks every 6 hours
-- 📤 **Auto-Upload**: Automatically downloads and sends new tracks to your channel
+- 📤 **Auto-Upload**: Automatically downloads and sends new tracks to designated channels
 - 🔐 **Admin Control**: Secure admin-only access to bot commands
 - 🐳 **Fully Dockerized**: Easy deployment with Docker Compose
 - 📊 **Statistics**: Track playlist stats and bot performance
@@ -16,17 +18,20 @@ A powerful Telegram bot that monitors Spotify playlists and automatically downlo
 ## 🏗️ Architecture
 
 ```
-┌─────────────┐      ┌──────────────┐      ┌─────────────┐
-│   Spotify   │─────▶│  Docker Bot  │─────▶│  Telegram   │
-│  Playlists  │      │   + Deemix   │      │   Channel   │
-└─────────────┘      └──────────────┘      └─────────────┘
+┌─────────────┐      ┌──────────────┐      ┌─────────────────┐
+│   Spotify   │─────▶│  Docker Bot  │─────▶│  Telegram       │
+│  Playlists  │      │   + Deemix   │      │  Channels       │
+│  Playlist A │      │              │      │  → Channel 1    │
+│  Playlist B │      │              │      │  → Channel 2    │
+│  Playlist C │      │              │      │  → Channel 3    │
+└─────────────┘      └──────────────┘      └─────────────────┘
 ```
 
 ## 📋 Prerequisites
 
 - Docker and Docker Compose installed
 - Telegram Bot Token (from [@BotFather](https://t.me/BotFather))
-- Telegram Channel (make bot admin)
+- Telegram Channel(s) (make bot admin in each)
 - Spotify API credentials (from [Spotify Developer Dashboard](https://developer.spotify.com/dashboard))
 - Deezer account (free account works, but limited to 128kbps)
 
@@ -108,13 +113,18 @@ If you didn't add ARL to .env:
 - `/start` - Welcome message and bot info
 - `/help` - Display help and usage instructions
 - `/listplaylists` - Show all monitored playlists
+- `/showlinks` - Display playlist-to-channel mappings
 - `/stats` - View bot statistics
 
 ### Admin Commands
 
 - `/addplaylist` - Add a new Spotify playlist to monitor
+- `/linkplaylist` - Link a playlist to a specific channel
+- `/setchannel` - Set channel for a playlist (legacy method)
 - `/removeplaylist` - Remove a playlist from monitoring
 - `/checkplaylists` - Manually trigger playlist check (bypass 6-hour timer)
+- `/setuparl` - Show instructions for getting Deezer ARL
+- `/setarl` - Set Deezer ARL token
 
 ## 📖 Usage Guide
 
@@ -129,7 +139,47 @@ If you didn't add ARL to .env:
    ```
    My Favorite Mix
    ```
-4. Bot will confirm and start monitoring!
+4. Send the channel ID where tracks should be posted:
+   ```
+   @mymusicchannel
+   ```
+   or
+   ```
+   -1001234567890
+   ```
+5. Bot will confirm and start monitoring!
+
+### Linking Playlist to Channel
+
+You can link different playlists to different channels:
+
+1. Send `/linkplaylist` to the bot
+2. Select the playlist from the interactive menu
+3. Send the new channel ID:
+   ```
+   @mynewchannel
+   ```
+4. Bot will update the mapping and confirm!
+
+### Viewing Playlist-Channel Mappings
+
+Send `/showlinks` to see which playlist sends to which channel:
+
+```
+🔗 ارتباط پلی‌لیست‌ها با چنل‌ها:
+
+1. 🎵 My Favorite Mix
+   📺 چنل: @mymusicchannel
+   📊 تعداد آهنگ: 50
+   🕐 آخرین چک: 2025-01-15 14:30
+   🔗 [لینک پلی‌لیست](https://open.spotify.com/playlist/...)
+
+2. 🎵 Chill Vibes
+   📺 چنل: @chillchannel
+   📊 تعداد آهنگ: 32
+   🕐 آخرین چک: 2025-01-15 14:32
+   🔗 [لینک پلی‌لیست](https://open.spotify.com/playlist/...)
+```
 
 ### Viewing Playlists
 

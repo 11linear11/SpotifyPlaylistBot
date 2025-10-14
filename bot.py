@@ -218,6 +218,8 @@ class SpotifyTelegramBot:
 
 📋 دستورات موجود:
 /addplaylist - افزودن پلی‌لیست جدید
+/linkplaylist - ارتباط پلی‌لیست به چنل خاص
+/showlinks - نمایش ارتباط پلی‌لیست‌ها با چنل‌ها
 /setchannel - تنظیم چنل برای پلی‌لیست
 /listplaylists - نمایش پلی‌لیست‌ها
 /removeplaylist - حذف پلی‌لیست
@@ -236,35 +238,57 @@ class SpotifyTelegramBot:
 
 1️⃣ افزودن پلی‌لیست:
 /addplaylist
-سپس لینک پلی‌لیست و نام دلخواه را ارسال کنید.
+سپس لینک پلی‌لیست، نام و ID چنل را ارسال کنید.
 
-2️⃣ تنظیم چنل برای پلی‌لیست:
+2️⃣ ارتباط پلی‌لیست به چنل:
+/linkplaylist
+برای تغییر چنل یک پلی‌لیست موجود
+
+3️⃣ نمایش ارتباط پلی‌لیست‌ها با چنل‌ها:
+/showlinks
+برای مشاهده همه پلی‌لیست‌ها و چنل‌های مرتبط
+
+4️⃣ تنظیم چنل برای پلی‌لیست:
 /setchannel
 سپس شماره پلی‌لیست و ID چنل را وارد کنید.
 
-3️⃣ مشاهده پلی‌لیست‌ها:
+5️⃣ مشاهده پلی‌لیست‌ها:
 /listplaylists
 
-4️⃣ حذف پلی‌لیست:
+6️⃣ حذف پلی‌لیست:
 /removeplaylist
 سپس شماره پلی‌لیست را وارد کنید.
 
-5️⃣ چک دستی:
+7️⃣ چک دستی:
 /checkplaylists
 برای چک فوری تمام پلی‌لیست‌ها
 
-6️⃣ آمار:
+8️⃣ آمار:
 /stats
 برای مشاهده آمار ربات
 
-7️⃣ تنظیم Deezer ARL:
+9️⃣ تنظیم Deezer ARL:
 /setuparl - راهنمای دریافت ARL
 /setarl TOKEN - تنظیم ARL token
 
 ⏰ ربات هر 6 ساعت به صورت خودکار پلی‌لیست‌ها را چک می‌کند.
 🎵 می‌توانید با دکمه‌های inline هر پلی‌لیست را جداگانه ارسال کنید.
+📺 هر پلی‌لیست می‌تواند به چنل مخصوص خود متصل باشد.
 """
         await update.message.reply_text(help_text)
+    
+    async def add_playlist_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /addplaylist command"""
+        if not self.is_admin(update.effective_user.id):
+            await update.message.reply_text("⛔️ فقط ادمین‌ها می‌توانند پلی‌لیست اضافه کنند.")
+            return
+        
+        await update.message.reply_text(
+            "لطفا لینک پلی‌لیست اسپاتیفای را ارسال کنید:\n"
+            "مثال: https://open.spotify.com/playlist/...\n\n"
+            "یا /cancel برای لغو"
+        )
+        context.user_data['awaiting_playlist_url'] = True
     
     async def set_channel_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /setchannel command"""
@@ -284,6 +308,75 @@ class SpotifyTelegramBot:
         
         await update.message.reply_text(message)
         context.user_data['awaiting_channel_playlist'] = True
+    
+    async def link_playlist_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /linkplaylist command - ارتباط دادن پلی‌لیست به چنل"""
+        if not self.is_admin(update.effective_user.id):
+            await update.message.reply_text("⛔️ فقط ادمین‌ها می‌توانند پلی‌لیست را به چنل مرتبط کنند.")
+            return
+        
+        playlists = self.config_manager.get_playlists()
+        if not playlists:
+            await update.message.reply_text("📭 هیچ پلی‌لیستی برای ارتباط با چنل وجود ندارد.")
+            return
+        
+        # ایجاد دکمه‌های inline برای انتخاب پلی‌لیست
+        keyboard = []
+        for i, playlist in enumerate(playlists):
+            current_channel = playlist.get('channel_id', 'تنظیم نشده')
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"🎵 {playlist['name'][:30]} (چنل: {current_channel})",
+                    callback_data=f"link_playlist_{i}"
+                )
+            ])
+        
+        keyboard.append([InlineKeyboardButton("❌ انصراف", callback_data="cancel_action")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            "🔗 *ارتباط پلی‌لیست به چنل*\n\n"
+            "لطفا پلی‌لیستی که می‌خواهید به چنل جدید مرتبط کنید را انتخاب کنید:",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+    
+    async def show_links_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /showlinks command - نمایش ارتباط پلی‌لیست‌ها با چنل‌ها"""
+        playlists = self.config_manager.get_playlists()
+        
+        if not playlists:
+            await update.message.reply_text("📭 هیچ پلی‌لیستی ثبت نشده است.")
+            return
+        
+        message = "🔗 *ارتباط پلی‌لیست‌ها با چنل‌ها:*\n\n"
+        
+        for i, playlist in enumerate(playlists, 1):
+            channel_id = playlist.get('channel_id', '❌ تنظیم نشده')
+            track_count = playlist.get('track_count', 0)
+            last_check = playlist.get('last_check', 'هرگز')
+            
+            if last_check != 'هرگز':
+                try:
+                    last_check = datetime.fromisoformat(last_check).strftime('%Y-%m-%d %H:%M')
+                except:
+                    pass
+            
+            message += f"{i}. 🎵 *{playlist['name']}*\n"
+            message += f"   📺 چنل: `{channel_id}`\n"
+            message += f"   📊 تعداد آهنگ: {track_count}\n"
+            message += f"   🕐 آخرین چک: {last_check}\n"
+            message += f"   🔗 [لینک پلی‌لیست]({playlist['url']})\n\n"
+        
+        # ایجاد دکمه برای ویرایش سریع
+        if self.is_admin(update.effective_user.id):
+            keyboard = [[
+                InlineKeyboardButton("🔗 ارتباط پلی‌لیست به چنل", callback_data="show_link_menu")
+            ]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        else:
+            await update.message.reply_text(message, parse_mode='Markdown')
     
     async def list_playlists_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /listplaylists command"""
@@ -611,6 +704,46 @@ class SpotifyTelegramBot:
             
             user_data.clear()
             return
+        
+        # Handle new channel ID for link playlist command
+        if user_data.get('awaiting_new_channel_id'):
+            channel_id = text.strip()
+            
+            # Handle @username format
+            if channel_id.startswith('@'):
+                channel_id = channel_id[1:]  # Remove @ symbol
+            
+            # Basic validation
+            if not channel_id or len(channel_id) < 3:
+                await update.message.reply_text("❌ ID چنل نامعتبر است.")
+                return
+            
+            playlist_url = user_data.get('selected_playlist_for_link')
+            
+            if self.config_manager.set_playlist_channel(playlist_url, channel_id):
+                playlist_name = None
+                for playlist in self.config_manager.get_playlists():
+                    if playlist['url'] == playlist_url:
+                        playlist_name = playlist['name']
+                        break
+                
+                keyboard = [[
+                    InlineKeyboardButton("🔗 مشاهده تمام ارتباطات", callback_data="show_all_links"),
+                    InlineKeyboardButton("📤 ارسال فوری", callback_data=f"send_playlist_{self.config_manager.get_playlists().index([p for p in self.config_manager.get_playlists() if p['url'] == playlist_url][0])}")
+                ]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                await update.message.reply_text(
+                    f"✅ چنل برای پلی‌لیست '{playlist_name}' به `{channel_id}` تغییر یافت!\n\n"
+                    f"حالا آهنگ‌های جدید این پلی‌لیست به این چنل ارسال می‌شوند.",
+                    reply_markup=reply_markup,
+                    parse_mode='Markdown'
+                )
+            else:
+                await update.message.reply_text("❌ خطا در تنظیم چنل.")
+            
+            user_data.clear()
+            return
     
     async def button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle button callbacks"""
@@ -621,7 +754,8 @@ class SpotifyTelegramBot:
         data = query.data
         
         # Check admin for restricted actions
-        if data in ['add_playlist', 'remove_playlist', 'check_now'] or data.startswith('send_playlist_'):
+        if data in ['add_playlist', 'remove_playlist', 'check_now', 'show_link_menu'] or \
+           data.startswith('send_playlist_') or data.startswith('link_playlist_'):
             if not self.is_admin(user_id):
                 await query.edit_message_text("⛔️ فقط ادمین‌ها می‌توانند این عملیات را انجام دهند.")
                 return
@@ -651,6 +785,23 @@ class SpotifyTelegramBot:
         
         elif data == "show_help":
             await self.show_help_callback(query)
+        
+        elif data == "show_link_menu":
+            # نمایش منوی ارتباط پلی‌لیست به چنل
+            await self.show_link_menu_callback(query, context)
+        
+        elif data.startswith("link_playlist_"):
+            # کاربر یک پلی‌لیست را برای ارتباط انتخاب کرد
+            playlist_index = int(data.split("_")[-1])
+            await self.handle_link_playlist_selection(query, context, playlist_index)
+        
+        elif data == "cancel_action":
+            await query.edit_message_text("❌ عملیات لغو شد.")
+            context.user_data.clear()
+        
+        elif data == "show_all_links":
+            # نمایش تمام ارتباطات پلی‌لیست‌ها با چنل‌ها
+            await self.show_all_links_callback(query)
         
         elif data.startswith("send_playlist_"):
             # Send specific playlist immediately
@@ -770,6 +921,91 @@ class SpotifyTelegramBot:
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await query.edit_message_text(help_text, reply_markup=reply_markup)
+    
+    async def show_link_menu_callback(self, query, context):
+        """نمایش منوی ارتباط پلی‌لیست به چنل"""
+        playlists = self.config_manager.get_playlists()
+        
+        if not playlists:
+            await query.edit_message_text("📭 هیچ پلی‌لیستی برای ارتباط با چنل وجود ندارد.")
+            return
+        
+        # ایجاد دکمه‌های inline برای انتخاب پلی‌لیست
+        keyboard = []
+        for i, playlist in enumerate(playlists):
+            current_channel = playlist.get('channel_id', 'تنظیم نشده')
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"🎵 {playlist['name'][:30]} (چنل: {current_channel})",
+                    callback_data=f"link_playlist_{i}"
+                )
+            ])
+        
+        keyboard.append([InlineKeyboardButton("❌ انصراف", callback_data="cancel_action")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            "🔗 *ارتباط پلی‌لیست به چنل*\n\n"
+            "لطفا پلی‌لیستی که می‌خواهید به چنل جدید مرتبط کنید را انتخاب کنید:",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+    
+    async def handle_link_playlist_selection(self, query, context, playlist_index: int):
+        """مدیریت انتخاب پلی‌لیست برای ارتباط به چنل"""
+        playlists = self.config_manager.get_playlists()
+        
+        if 0 <= playlist_index < len(playlists):
+            playlist = playlists[playlist_index]
+            current_channel = playlist.get('channel_id', 'تنظیم نشده')
+            
+            context.user_data['selected_playlist_for_link'] = playlist['url']
+            context.user_data['awaiting_new_channel_id'] = True
+            
+            await query.edit_message_text(
+                f"🎵 پلی‌لیست انتخاب شده: *{playlist['name']}*\n"
+                f"📺 چنل فعلی: `{current_channel}`\n\n"
+                f"لطفا ID چنل جدید را ارسال کنید:\n"
+                f"مثال: @channelname یا -1001234567890\n\n"
+                f"یا /cancel برای لغو",
+                parse_mode='Markdown'
+            )
+        else:
+            await query.edit_message_text("❌ پلی‌لیست یافت نشد.")
+    
+    async def show_all_links_callback(self, query):
+        """نمایش تمام ارتباطات پلی‌لیست‌ها با چنل‌ها"""
+        playlists = self.config_manager.get_playlists()
+        
+        if not playlists:
+            await query.edit_message_text("📭 هیچ پلی‌لیستی ثبت نشده است.")
+            return
+        
+        message = "🔗 *ارتباط پلی‌لیست‌ها با چنل‌ها:*\n\n"
+        
+        for i, playlist in enumerate(playlists, 1):
+            channel_id = playlist.get('channel_id', '❌ تنظیم نشده')
+            track_count = playlist.get('track_count', 0)
+            last_check = playlist.get('last_check', 'هرگز')
+            
+            if last_check != 'هرگز':
+                try:
+                    last_check = datetime.fromisoformat(last_check).strftime('%Y-%m-%d %H:%M')
+                except:
+                    pass
+            
+            message += f"{i}. 🎵 *{playlist['name']}*\n"
+            message += f"   📺 چنل: `{channel_id}`\n"
+            message += f"   📊 تعداد آهنگ: {track_count}\n"
+            message += f"   🕐 آخرین چک: {last_check}\n\n"
+        
+        keyboard = [[
+            InlineKeyboardButton("🔗 تغییر ارتباط", callback_data="show_link_menu"),
+            InlineKeyboardButton("🔙 بازگشت", callback_data="list_playlists")
+        ]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
     
     async def send_specific_playlist(self, query, playlist_index: int):
         """Send specific playlist immediately"""
@@ -995,6 +1231,8 @@ class SpotifyTelegramBot:
         app.add_handler(CommandHandler("start", self.start_command))
         app.add_handler(CommandHandler("help", self.help_command))
         app.add_handler(CommandHandler("addplaylist", self.add_playlist_command))
+        app.add_handler(CommandHandler("linkplaylist", self.link_playlist_command))
+        app.add_handler(CommandHandler("showlinks", self.show_links_command))
         app.add_handler(CommandHandler("setchannel", self.set_channel_command))
         app.add_handler(CommandHandler("listplaylists", self.list_playlists_command))
         app.add_handler(CommandHandler("removeplaylist", self.remove_playlist_command))
