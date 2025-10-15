@@ -189,115 +189,176 @@ class SpotifyTelegramBot:
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command"""
         user = update.effective_user
+        is_admin = self.is_admin(user.id)
         
         # Create inline keyboard with quick actions
-        keyboard = []
-        
-        if self.is_admin(user.id):
+        if is_admin:
             keyboard = [
                 [
-                    InlineKeyboardButton("➕ افزودن پلی‌لیست", callback_data="add_playlist"),
-                    InlineKeyboardButton("📋 لیست پلی‌لیست‌ها", callback_data="list_playlists")
+                    InlineKeyboardButton("🎵 افزودن پلی‌لیست", callback_data="add_playlist"),
                 ],
                 [
-                    InlineKeyboardButton("🔄 چک و ارسال فوری", callback_data="check_now"),
-                    InlineKeyboardButton("📊 آمار", callback_data="show_stats")
+                    InlineKeyboardButton("📋 مشاهده پلی‌لیست‌ها", callback_data="list_playlists"),
+                    InlineKeyboardButton("🔗 ارتباط چنل‌ها", callback_data="show_all_links")
                 ],
                 [
-                    InlineKeyboardButton("❌ حذف پلی‌لیست", callback_data="remove_playlist"),
-                    InlineKeyboardButton("❓ راهنما", callback_data="show_help")
+                    InlineKeyboardButton("🔄 چک فوری", callback_data="check_now"),
+                    InlineKeyboardButton("📊 آمار و وضعیت", callback_data="show_stats")
+                ],
+                [
+                    InlineKeyboardButton("⚙️ مدیریت", callback_data="show_management"),
+                    InlineKeyboardButton("💡 راهنما", callback_data="show_help")
                 ]
             ]
         else:
             keyboard = [
                 [
-                    InlineKeyboardButton("📋 لیست پلی‌لیست‌ها", callback_data="list_playlists"),
+                    InlineKeyboardButton("📋 پلی‌لیست‌ها", callback_data="list_playlists"),
                     InlineKeyboardButton("📊 آمار", callback_data="show_stats")
                 ],
                 [
-                    InlineKeyboardButton("❓ راهنما", callback_data="show_help")
+                    InlineKeyboardButton("💡 راهنما", callback_data="show_help")
                 ]
             ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        welcome_message = f"""
-👋 سلام {user.first_name}!
+        # Create beautiful welcome message
+        access_level = "🔐 <b>دسترسی: ادمین</b>" if is_admin else "👤 <b>دسترسی: کاربر</b>"
+        
+        welcome_message = f"""╭─────────────────────╮
+│   🎵 ربات اسپاتیفای   │
+╰─────────────────────╯
 
-من یک ربات مدیریت پلی‌لیست اسپاتیفای هستم.
+👋 سلام <b>{user.first_name}</b> عزیز!
 
-📋 دستورات موجود:
-/addplaylist - افزودن پلی‌لیست جدید
-/linkplaylist - ارتباط پلی‌لیست به چنل خاص
-/showlinks - نمایش ارتباط پلی‌لیست‌ها با چنل‌ها
-/setchannel - تنظیم چنل برای پلی‌لیست
-/listplaylists - نمایش پلی‌لیست‌ها
-/removeplaylist - حذف پلی‌لیست
-/checkplaylists - چک دستی پلی‌لیست‌ها
-/stats - آمار ربات
-/help - راهنما
+🤖 من ربات مدیریت و اشتراک‌گذاری پلی‌لیست‌های اسپاتیفای هستم.
 
-{'⚠️ شما دسترسی ادمین ندارید.' if not self.is_admin(user.id) else '✅ شما ادمین هستید - از دکمه‌های زیر استفاده کنید:'}
+{access_level}
+
+┌ 🎯 <b>قابلیت‌های من:</b>
+├─ 📡 مانیتورینگ خودکار پلی‌لیست‌ها
+├─ 🎼 دانلود و ارسال آهنگ‌های جدید
+├─ 📺 پشتیبانی از چند چنل
+└─ ⏰ بررسی هر 6 ساعت
+
+💫 از دکمه‌های زیر برای شروع استفاده کنید:
 """
-        await update.message.reply_text(welcome_message, reply_markup=reply_markup)
+        
+        # Add admin commands if user is admin
+        if is_admin:
+            welcome_message = welcome_message.replace(
+                "💫 از دکمه‌های زیر برای شروع استفاده کنید:",
+                """
+┌ ⚡️ <b>دستورات سریع:</b>
+├─ /addplaylist → افزودن پلی‌لیست
+├─ /linkplaylist → ارتباط به چنل
+├─ /showlinks → مشاهده ارتباطات
+└─ /checkplaylists → چک فوری
+
+💫 از دکمه‌های زیر برای شروع استفاده کنید:"""
+            )
+        
+        await update.message.reply_text(
+            welcome_message, 
+            reply_markup=reply_markup,
+            parse_mode='HTML'
+        )
     
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /help command"""
+        is_admin = self.is_admin(update.effective_user.id)
+        
         help_text = """
-📖 راهنمای استفاده:
+╭──────────────────╮
+│  � راهنمای کامل  │
+╰──────────────────╯
 
-1️⃣ افزودن پلی‌لیست:
-/addplaylist
-سپس لینک پلی‌لیست، نام و ID چنل را ارسال کنید.
+<b>📚 دستورات اصلی:</b>
 
-2️⃣ ارتباط پلی‌لیست به چنل:
-/linkplaylist
-برای تغییر چنل یک پلی‌لیست موجود
+🎵 <b>افزودن پلی‌لیست</b>
+└─ /addplaylist
+   ورودی‌ها: لینک، نام، چنل
 
-3️⃣ نمایش ارتباط پلی‌لیست‌ها با چنل‌ها:
-/showlinks
-برای مشاهده همه پلی‌لیست‌ها و چنل‌های مرتبط
+🔗 <b>مدیریت چنل‌ها</b>
+├─ /linkplaylist → تغییر چنل پلی‌لیست
+├─ /showlinks → مشاهده ارتباطات
+└─ /setchannel → تنظیم چنل (روش قدیم)
 
-4️⃣ تنظیم چنل برای پلی‌لیست:
-/setchannel
-سپس شماره پلی‌لیست و ID چنل را وارد کنید.
+📋 <b>مشاهده اطلاعات</b>
+├─ /listplaylists → لیست پلی‌لیست‌ها
+├─ /stats → آمار کامل ربات
+└─ /help → این راهنما
 
-5️⃣ مشاهده پلی‌لیست‌ها:
-/listplaylists
-
-6️⃣ حذف پلی‌لیست:
-/removeplaylist
-سپس شماره پلی‌لیست را وارد کنید.
-
-7️⃣ چک دستی:
-/checkplaylists
-برای چک فوری تمام پلی‌لیست‌ها
-
-8️⃣ آمار:
-/stats
-برای مشاهده آمار ربات
-
-9️⃣ تنظیم Deezer ARL:
-/setuparl - راهنمای دریافت ARL
-/setarl TOKEN - تنظیم ARL token
-
-⏰ ربات هر 6 ساعت به صورت خودکار پلی‌لیست‌ها را چک می‌کند.
-🎵 می‌توانید با دکمه‌های inline هر پلی‌لیست را جداگانه ارسال کنید.
-📺 هر پلی‌لیست می‌تواند به چنل مخصوص خود متصل باشد.
 """
-        await update.message.reply_text(help_text)
+        
+        if is_admin:
+            help_text += """<b>⚙️ دستورات مدیریتی:</b>
+
+🗑 <b>حذف پلی‌لیست</b>
+└─ /removeplaylist
+   حذف یک پلی‌لیست
+
+🔄 <b>چک دستی</b>
+└─ /checkplaylists
+   بررسی فوری همه پلی‌لیست‌ها
+
+🎧 <b>تنظیم Deezer</b>
+├─ /setuparl → راهنمای دریافت ARL
+└─ /setarl [TOKEN] → ثبت توکن
+
+"""
+        
+        help_text += """
+┌─────────────────────
+│ <b>ℹ️ اطلاعات مفید:</b>
+├─ ⏰ چک خودکار هر 6 ساعت
+├─ 🎼 دانلود با کیفیت 128kbps
+├─ 📺 پشتیبانی چند چنل
+└─ 💾 ذخیره‌سازی خودکار
+
+<b>💬 نیاز به کمک؟</b>
+از دکمه‌های منو استفاده کنید!
+"""
+        
+        keyboard = [[
+            InlineKeyboardButton("🔙 بازگشت به منو", callback_data="back_to_start")
+        ]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            help_text, 
+            reply_markup=reply_markup,
+            parse_mode='HTML'
+        )
     
     async def add_playlist_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /addplaylist command"""
         if not self.is_admin(update.effective_user.id):
-            await update.message.reply_text("⛔️ فقط ادمین‌ها می‌توانند پلی‌لیست اضافه کنند.")
+            await update.message.reply_text(
+                "⛔️ <b>دسترسی محدود</b>\n\n"
+                "فقط ادمین‌ها می‌توانند پلی‌لیست اضافه کنند.",
+                parse_mode='HTML'
+            )
             return
         
-        await update.message.reply_text(
-            "لطفا لینک پلی‌لیست اسپاتیفای را ارسال کنید:\n"
-            "مثال: https://open.spotify.com/playlist/...\n\n"
-            "یا /cancel برای لغو"
-        )
+        message = """
+╭──────────────────────╮
+│  🎵 افزودن پلی‌لیست   │
+╰──────────────────────╯
+
+<b>مرحله 1 از 3:</b> لینک پلی‌لیست
+
+📎 لطفا لینک پلی‌لیست اسپاتیفای را ارسال کنید:
+
+<b>مثال:</b>
+<code>https://open.spotify.com/playlist/37i9dQZF1DX...</code>
+
+💡 <i>لینک را از اپلیکیشن Spotify کپی کنید</i>
+
+❌ برای لغو: /cancel
+"""
+        await update.message.reply_text(message, parse_mode='HTML')
         context.user_data['awaiting_playlist_url'] = True
     
     async def set_channel_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -465,21 +526,58 @@ class SpotifyTelegramBot:
                           for p in playlists)
         total_sent = sum(self.tracks_db.get(p['url'], {}).get('sent_tracks', 0) 
                         for p in playlists)
+        pending_tracks = total_tracks - total_sent
         
         # Check ARL status
-        arl_status = "✅ فعال" if self.deezer_arl else "❌ تنظیم نشده"
+        arl_status = "🟢 فعال" if self.deezer_arl else "🔴 غیرفعال"
+        
+        # Calculate success rate
+        success_rate = (total_sent / total_tracks * 100) if total_tracks > 0 else 0
+        
+        # Get unique channels
+        channels = set(p.get('channel_id', '') for p in playlists if p.get('channel_id'))
         
         stats_message = f"""
-📊 آمار ربات:
+╭────────────────────╮
+│  📊 آمار و وضعیت   │
+╰────────────────────╯
 
-🎵 تعداد پلی‌لیست‌ها: {len(playlists)}
-🎼 کل آهنگ‌ها: {total_tracks}
-✅ آهنگ‌های ارسال شده: {total_sent}
-⏰ بازه چک: 6 ساعت
-🎚️ کیفیت: 128kbps
-🎧 Deezer ARL: {arl_status}
+<b>📈 آمار کلی:</b>
+┌─────────────────────
+├─ 🎵 پلی‌لیست‌ها: <b>{len(playlists)}</b>
+├─ 📺 چنل‌ها: <b>{len(channels)}</b>
+├─ 🎼 کل آهنگ‌ها: <b>{total_tracks}</b>
+├─ ✅ ارسال شده: <b>{total_sent}</b>
+├─ ⏳ در انتظار: <b>{pending_tracks}</b>
+└─ 📊 نرخ موفقیت: <b>{success_rate:.1f}%</b>
+
+<b>⚙️ تنظیمات:</b>
+┌─────────────────────
+├─ ⏰ بازه چک: <b>6 ساعت</b>
+├─ 🎚️ کیفیت: <b>128kbps</b>
+├─ 🎧 Deezer ARL: {arl_status}
+└─ 🤖 وضعیت: <b>🟢 فعال</b>
+
+<b>💡 نکته:</b> ربات به صورت خودکار
+هر 6 ساعت پلی‌لیست‌ها را بررسی می‌کند.
 """
-        await update.message.reply_text(stats_message)
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("🔄 رفرش", callback_data="show_stats"),
+                InlineKeyboardButton("📋 پلی‌لیست‌ها", callback_data="list_playlists")
+            ],
+            [
+                InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_start")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            stats_message,
+            reply_markup=reply_markup,
+            parse_mode='HTML'
+        )
     
     async def setup_arl_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /setuparl command"""
@@ -580,13 +678,30 @@ class SpotifyTelegramBot:
         # Handle playlist URL input
         if user_data.get('awaiting_playlist_url'):
             if 'spotify.com/playlist' not in text:
-                await update.message.reply_text("❌ لینک نامعتبر است. لطفا یک لینک معتبر ارسال کنید.")
+                await update.message.reply_text(
+                    "❌ <b>لینک نامعتبر</b>\n\n"
+                    "لطفا یک لینک معتبر اسپاتیفای ارسال کنید.\n\n"
+                    "<b>مثال صحیح:</b>\n"
+                    "<code>https://open.spotify.com/playlist/...</code>",
+                    parse_mode='HTML'
+                )
                 return
             
             user_data['playlist_url'] = text
             user_data['awaiting_playlist_url'] = False
             user_data['awaiting_playlist_name'] = True
-            await update.message.reply_text("✅ لینک دریافت شد.\nحالا یک نام برای این پلی‌لیست وارد کنید:")
+            
+            await update.message.reply_text(
+                "✅ <b>لینک دریافت شد!</b>\n\n"
+                "╭──────────────────────╮\n"
+                "│  🎵 افزودن پلی‌لیست   │\n"
+                "╰──────────────────────╯\n\n"
+                "<b>مرحله 2 از 3:</b> نام پلی‌لیست\n\n"
+                "📝 یک نام دلخواه برای این پلی‌لیست وارد کنید:\n\n"
+                "<b>مثال:</b> <code>پلی‌لیست راک من</code>\n\n"
+                "❌ برای لغو: /cancel",
+                parse_mode='HTML'
+            )
             return
         
         # Handle playlist name input
@@ -599,10 +714,18 @@ class SpotifyTelegramBot:
             user_data['awaiting_playlist_channel'] = True
             
             await update.message.reply_text(
-                f"✅ لینک و نام دریافت شد.\n"
-                f"حالا ID چنل مورد نظر را ارسال کنید:\n"
-                f"مثال: @channelname یا -1001234567890\n\n"
-                f"یا /cancel برای لغو"
+                "✅ <b>نام دریافت شد!</b>\n\n"
+                "╭──────────────────────╮\n"
+                "│  🎵 افزودن پلی‌لیست   │\n"
+                "╰──────────────────────╯\n\n"
+                "<b>مرحله 3 از 3:</b> چنل مقصد\n\n"
+                "📺 ID چنل مورد نظر را ارسال کنید:\n\n"
+                "<b>فرمت‌های مجاز:</b>\n"
+                "▫️ <code>@channelname</code> (چنل عمومی)\n"
+                "▫️ <code>-1001234567890</code> (چنل خصوصی)\n\n"
+                "💡 ربات باید در چنل Admin باشد\n\n"
+                "❌ برای لغو: /cancel",
+                parse_mode='HTML'
             )
             return
         
@@ -616,26 +739,50 @@ class SpotifyTelegramBot:
             
             # Basic validation
             if not channel_id or len(channel_id) < 3:
-                await update.message.reply_text("❌ ID چنل نامعتبر است.")
+                await update.message.reply_text(
+                    "❌ <b>ID چنل نامعتبر</b>\n\n"
+                    "لطفا یک ID معتبر وارد کنید:\n"
+                    "▫️ <code>@channelname</code>\n"
+                    "▫️ <code>-1001234567890</code>",
+                    parse_mode='HTML'
+                )
                 return
             
             url = user_data.get('playlist_url')
             name = user_data.get('playlist_name')
             
             if self.config_manager.add_playlist(url, name, update.effective_user.id, channel_id):
-                keyboard = [[
-                    InlineKeyboardButton("📤 ارسال فوری آهنگ‌های این پلی‌لیست", callback_data="send_latest_playlist")
-                ]]
+                keyboard = [
+                    [
+                        InlineKeyboardButton("📤 ارسال فوری", callback_data="send_latest_playlist")
+                    ],
+                    [
+                        InlineKeyboardButton("📋 مشاهده پلی‌لیست‌ها", callback_data="list_playlists")
+                    ]
+                ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 
                 await update.message.reply_text(
-                    f"✅ پلی‌لیست '{name}' با موفقیت اضافه شد!\n"
-                    f"چنل تنظیم شده: {channel_id}\n\n"
-                    f"می‌خواهید الان آهنگ‌های آن را چک و ارسال کنید؟",
-                    reply_markup=reply_markup
+                    "╭─────────────────╮\n"
+                    "│  ✅ موفقیت‌آمیز!  │\n"
+                    "╰─────────────────╯\n\n"
+                    f"🎵 <b>پلی‌لیست:</b> {name}\n"
+                    f"📺 <b>چنل:</b> <code>{channel_id}</code>\n"
+                    f"📡 <b>وضعیت:</b> فعال\n\n"
+                    "✨ پلی‌لیست با موفقیت اضافه شد!\n\n"
+                    "💫 آهنگ‌های جدید به صورت خودکار\n"
+                    "به چنل شما ارسال می‌شوند.\n\n"
+                    "🔽 می‌توانید الان هم چک کنید:",
+                    reply_markup=reply_markup,
+                    parse_mode='HTML'
                 )
             else:
-                await update.message.reply_text("⚠️ این پلی‌لیست قبلا اضافه شده است.")
+                await update.message.reply_text(
+                    "⚠️ <b>توجه!</b>\n\n"
+                    "این پلی‌لیست قبلاً اضافه شده است.\n\n"
+                    "از /listplaylists برای مشاهده لیست استفاده کنید.",
+                    parse_mode='HTML'
+                )
             
             user_data.clear()
             return
@@ -764,19 +911,121 @@ class SpotifyTelegramBot:
         data = query.data
         
         # Check admin for restricted actions
-        if data in ['add_playlist', 'remove_playlist', 'check_now', 'show_link_menu'] or \
+        if data in ['add_playlist', 'remove_playlist', 'check_now', 'show_link_menu', 'show_management'] or \
            data.startswith('send_playlist_') or data.startswith('link_playlist_'):
             if not self.is_admin(user_id):
-                await query.edit_message_text("⛔️ فقط ادمین‌ها می‌توانند این عملیات را انجام دهند.")
+                await query.edit_message_text(
+                    "⛔️ <b>دسترسی محدود</b>\n\n"
+                    "این عملیات فقط برای ادمین‌ها مجاز است.",
+                    parse_mode='HTML'
+                )
                 return
         
         # Handle different callbacks
-        if data == "add_playlist":
+        if data == "back_to_start":
+            # Show start menu again
+            user = query.from_user
+            is_admin = self.is_admin(user.id)
+            
+            if is_admin:
+                keyboard = [
+                    [
+                        InlineKeyboardButton("🎵 افزودن پلی‌لیست", callback_data="add_playlist"),
+                    ],
+                    [
+                        InlineKeyboardButton("📋 مشاهده پلی‌لیست‌ها", callback_data="list_playlists"),
+                        InlineKeyboardButton("🔗 ارتباط چنل‌ها", callback_data="show_all_links")
+                    ],
+                    [
+                        InlineKeyboardButton("🔄 چک فوری", callback_data="check_now"),
+                        InlineKeyboardButton("📊 آمار و وضعیت", callback_data="show_stats")
+                    ],
+                    [
+                        InlineKeyboardButton("⚙️ مدیریت", callback_data="show_management"),
+                        InlineKeyboardButton("💡 راهنما", callback_data="show_help")
+                    ]
+                ]
+            else:
+                keyboard = [
+                    [
+                        InlineKeyboardButton("📋 پلی‌لیست‌ها", callback_data="list_playlists"),
+                        InlineKeyboardButton("📊 آمار", callback_data="show_stats")
+                    ],
+                    [
+                        InlineKeyboardButton("💡 راهنما", callback_data="show_help")
+                    ]
+                ]
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            welcome_message = f"""
+╭─────────────────────╮
+│   🎵 ربات اسپاتیفای   │
+╰─────────────────────╯
+
+👋 سلام <b>{user.first_name}</b> عزیز!
+
+🤖 من ربات مدیریت و اشتراک‌گذاری پلی‌لیست‌های اسپاتیفای هستم.
+
+{'🔐 <b>دسترسی: ادمین</b>' if is_admin else '👤 <b>دسترسی: کاربر</b>'}
+
+💫 از دکمه‌های زیر برای شروع استفاده کنید:
+"""
             await query.edit_message_text(
-                "لطفا لینک پلی‌لیست اسپاتیفای را ارسال کنید:\n"
-                "مثال: https://open.spotify.com/playlist/...\n\n"
-                "یا /cancel برای لغو"
+                welcome_message,
+                reply_markup=reply_markup,
+                parse_mode='HTML'
             )
+        
+        elif data == "show_management":
+            # Show management menu
+            keyboard = [
+                [
+                    InlineKeyboardButton("➕ افزودن پلی‌لیست", callback_data="add_playlist"),
+                    InlineKeyboardButton("🗑 حذف پلی‌لیست", callback_data="remove_playlist")
+                ],
+                [
+                    InlineKeyboardButton("🔗 تنظیم چنل", callback_data="show_link_menu"),
+                    InlineKeyboardButton("🔄 چک فوری", callback_data="check_now")
+                ],
+                [
+                    InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_start")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.edit_message_text(
+                "╭────────────────╮\n"
+                "│  ⚙️ پنل مدیریت  │\n"
+                "╰────────────────╯\n\n"
+                "<b>عملیات مدیریتی:</b>\n\n"
+                "▫️ افزودن پلی‌لیست جدید\n"
+                "▫️ حذف پلی‌لیست\n"
+                "▫️ تنظیم و تغییر چنل\n"
+                "▫️ چک و ارسال فوری\n\n"
+                "💡 یکی از گزینه‌های زیر را انتخاب کنید:",
+                reply_markup=reply_markup,
+                parse_mode='HTML'
+            )
+        
+        elif data == "add_playlist":
+            message = """
+╭──────────────────────╮
+│  🎵 افزودن پلی‌لیست   │
+╰──────────────────────╯
+
+<b>مرحله 1 از 3:</b> لینک پلی‌لیست
+
+📎 لطفا لینک پلی‌لیست اسپاتیفای را ارسال کنید:
+
+<b>مثال:</b>
+<code>https://open.spotify.com/playlist/37i9dQZF1DX...</code>
+
+💡 <i>لینک را از اپلیکیشن Spotify کپی کنید</i>
+
+❌ برای لغو: /cancel
+"""
+            await query.edit_message_text(message, parse_mode='HTML')
             context.user_data['awaiting_playlist_url'] = True
         
         elif data == "list_playlists":
@@ -786,9 +1035,22 @@ class SpotifyTelegramBot:
             await self.handle_remove_callback(query, context)
         
         elif data == "check_now":
-            await query.edit_message_text("🔄 در حال چک و ارسال تمام پلی‌لیست‌ها...")
+            await query.edit_message_text(
+                "🔄 <b>در حال بررسی پلی‌لیست‌ها...</b>\n\n"
+                "لطفا صبر کنید، این کار ممکن است چند دقیقه طول بکشد.",
+                parse_mode='HTML'
+            )
             await self.check_all_playlists()
-            await query.message.reply_text("✅ چک و ارسال تمام پلی‌لیست‌ها تکمیل شد.")
+            
+            keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_start")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.message.reply_text(
+                "✅ <b>چک تکمیل شد!</b>\n\n"
+                "تمام پلی‌لیست‌ها بررسی شدند و آهنگ‌های جدید ارسال شدند.",
+                reply_markup=reply_markup,
+                parse_mode='HTML'
+            )
         
         elif data == "show_stats":
             await self.show_stats_callback(query)
@@ -884,53 +1146,116 @@ class SpotifyTelegramBot:
                           for p in playlists)
         total_sent = sum(self.tracks_db.get(p['url'], {}).get('sent_tracks', 0) 
                         for p in playlists)
+        pending_tracks = total_tracks - total_sent
+        
+        # Check ARL status
+        arl_status = "🟢 فعال" if self.deezer_arl else "🔴 غیرفعال"
+        
+        # Calculate success rate
+        success_rate = (total_sent / total_tracks * 100) if total_tracks > 0 else 0
+        
+        # Get unique channels
+        channels = set(p.get('channel_id', '') for p in playlists if p.get('channel_id'))
         
         stats_message = f"""
-📊 آمار ربات:
+╭────────────────────╮
+│  📊 آمار و وضعیت   │
+╰────────────────────╯
 
-🎵 تعداد پلی‌لیست‌ها: {len(playlists)}
-🎼 کل آهنگ‌ها: {total_tracks}
-✅ آهنگ‌های ارسال شده: {total_sent}
-⏰ بازه چک: 6 ساعت
-🎚️ کیفیت: 128kbps
+<b>📈 آمار کلی:</b>
+┌─────────────────────
+├─ 🎵 پلی‌لیست‌ها: <b>{len(playlists)}</b>
+├─ 📺 چنل‌ها: <b>{len(channels)}</b>
+├─ 🎼 کل آهنگ‌ها: <b>{total_tracks}</b>
+├─ ✅ ارسال شده: <b>{total_sent}</b>
+├─ ⏳ در انتظار: <b>{pending_tracks}</b>
+└─ 📊 نرخ موفقیت: <b>{success_rate:.1f}%</b>
+
+<b>⚙️ تنظیمات:</b>
+┌─────────────────────
+├─ ⏰ بازه چک: <b>6 ساعت</b>
+├─ 🎚️ کیفیت: <b>128kbps</b>
+├─ 🎧 Deezer ARL: {arl_status}
+└─ 🤖 وضعیت: <b>🟢 فعال</b>
+
+<b>💡 نکته:</b> ربات به صورت خودکار
+هر 6 ساعت پلی‌لیست‌ها را بررسی می‌کند.
 """
         
-        keyboard = [[
-            InlineKeyboardButton("🔙 بازگشت", callback_data="list_playlists")
-        ]]
+        keyboard = [
+            [
+                InlineKeyboardButton("� رفرش", callback_data="show_stats"),
+                InlineKeyboardButton("📋 پلی‌لیست‌ها", callback_data="list_playlists")
+            ],
+            [
+                InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_start")
+            ]
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.edit_message_text(stats_message, reply_markup=reply_markup)
+        await query.edit_message_text(
+            stats_message,
+            reply_markup=reply_markup,
+            parse_mode='HTML'
+        )
     
     async def show_help_callback(self, query):
         """Show help via callback"""
+        is_admin = self.is_admin(query.from_user.id)
+        
         help_text = """
-📖 راهنمای استفاده:
+╭──────────────────╮
+│  � راهنمای کامل  │
+╰──────────────────╯
 
-1️⃣ افزودن پلی‌لیست:
-/addplaylist یا دکمه "افزودن پلی‌لیست"
+<b>📚 دستورات اصلی:</b>
 
-2️⃣ تنظیم چنل:
-/setchannel یا دکمه "تنظیم چنل"
+🎵 <b>افزودن پلی‌لیست</b>
+└─ /addplaylist
+   ورودی‌ها: لینک، نام، چنل
 
-3️⃣ مشاهده پلی‌لیست‌ها:
-/listplaylists یا دکمه "لیست پلی‌لیست‌ها"
+🔗 <b>مدیریت چنل‌ها</b>
+├─ /linkplaylist → تغییر چنل
+├─ /showlinks → مشاهده ارتباطات
+└─ /setchannel → تنظیم چنل
 
-4️⃣ ارسال فوری:
-از دکمه "ارسال فوری" کنار هر پلی‌لیست
+📋 <b>مشاهده اطلاعات</b>
+├─ /listplaylists → لیست پلی‌لیست‌ها
+├─ /stats → آمار کامل
+└─ /help → این راهنما
 
-5️⃣ چک همه:
-دکمه "چک و ارسال همه"
+"""
+        
+        if is_admin:
+            help_text += """<b>⚙️ دستورات مدیریتی:</b>
 
-⏰ ربات هر 6 ساعت به صورت خودکار چک می‌کند.
+🗑 <b>حذف</b> → /removeplaylist
+🔄 <b>چک فوری</b> → /checkplaylists
+🎧 <b>تنظیم ARL</b> → /setuparl
+
+"""
+        
+        help_text += """
+┌─────────────────────
+│ <b>ℹ️ اطلاعات:</b>
+├─ ⏰ چک خودکار هر 6 ساعت
+├─ 🎼 کیفیت 128kbps
+├─ 📺 پشتیبانی چند چنل
+└─ 💾 ذخیره خودکار
+
+💬 از دکمه‌های منو استفاده کنید!
 """
         
         keyboard = [[
-            InlineKeyboardButton("🔙 بازگشت به منو", callback_data="show_main_menu")
+            InlineKeyboardButton("🔙 بازگشت به منو", callback_data="back_to_start")
         ]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.edit_message_text(help_text, reply_markup=reply_markup)
+        await query.edit_message_text(
+            help_text,
+            reply_markup=reply_markup,
+            parse_mode='HTML'
+        )
     
     async def show_link_menu_callback(self, query, context):
         """نمایش منوی ارتباط پلی‌لیست به چنل"""
