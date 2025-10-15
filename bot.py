@@ -117,6 +117,16 @@ class ConfigManager:
                 self.save_config()
                 return True
         return False
+    
+    def update_playlist_check(self, url: str, track_count: int) -> bool:
+        """Update last check time and track count for a playlist"""
+        for playlist in self.config['playlists']:
+            if playlist['url'] == url:
+                playlist['last_check'] = datetime.now().isoformat()
+                playlist['track_count'] = track_count
+                self.save_config()
+                return True
+        return False
 
 
 class SpotifyTelegramBot:
@@ -1024,36 +1034,100 @@ class SpotifyTelegramBot:
             await query.edit_message_text("❌ پلی‌لیست یافت نشد.")
     
     async def send_audio_to_channel(self, file_path: str, track_name: str, 
-                                   artist_name: str, channel_id: str) -> bool:
-        """Send audio file to specified channel"""
-        try:
-            if not os.path.exists(file_path):
-                logger.error(f"File not found: {file_path}")
-                return False
-            
-            caption = (
-                f"🎵 <b>{track_name}</b>\n"
-                f"🎤 {artist_name}\n\n"
-                f"#موسیقی #دانلود"
-            )
-            
-            bot = Bot(token=self.telegram_token)
-            with open(file_path, 'rb') as audio:
-                await bot.send_audio(
-                    chat_id=channel_id,
-                    audio=audio,
-                    caption=caption,
-                    parse_mode='HTML',
-                    title=track_name,
-                    performer=artist_name
-                )
-            
-            logger.info(f"✅ Sent: {track_name} - {artist_name} to {channel_id}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error sending file: {e}")
+                                   artist_name: str, channel_id: str, 
+                                   max_retries: int = 3, timeout: int = 120) -> bool:
+        """Send audio file to specified channel with retry mechanism"""
+        
+        if not os.path.exists(file_path):
+            logger.error(f"❌ File not found: {file_path}")
             return False
+        
+        # Get file size for logging
+        file_size = os.path.getsize(file_path) / (1024 * 1024)  # MB
+        logger.info(f"📦 File size: {file_size:.2f} MB")
+        
+        caption = (
+            f"🎵 <b>{track_name}</b>\n"
+            f"🎤 {artist_name}\n\n"
+            f"#موسیقی #دانلود"
+        )
+        
+        bot = Bot(token=self.telegram_token)
+        
+        for attempt in range(1, max_retries + 1):
+            try:
+                logger.info(f"📤 Attempt {attempt}/{max_retries}: Sending {track_name}")
+                
+                with open(file_path, 'rb') as audio:
+                    # Set timeout for send operation
+                    await asyncio.wait_for(
+                        bot.send_audio(
+                            chat_id=channel_id,
+                            audio=audio,
+                            caption=caption,
+                            parse_mode='HTML',
+                            title=track_name,
+                            performer=artist_name,
+                            read_timeout=timeout,
+                            write_timeout=timeout,
+                            connect_timeout=30,
+                            pool_timeout=30
+                        ),
+                        timeout=timeout + 30  # Total timeout
+                    )
+                
+                logger.info(f"✅ Successfully sent: {track_name} - {artist_name} to {channel_id}")
+                return True
+                
+            except asyncio.TimeoutError:
+                logger.warning(f"⏱️ Timeout on attempt {attempt}/{max_retries} for {track_name}")
+                if attempt < max_retries:
+                    wait_time = attempt * 5  # Exponential backoff
+                    logger.info(f"⏳ Waiting {wait_time}s before retry...")
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error(f"❌ Failed after {max_retries} attempts (timeout): {track_name}")
+                    return False
+                    
+            except TelegramError as e:
+                error_msg = str(e)
+                logger.error(f"⚠️ Telegram error on attempt {attempt}/{max_retries}: {error_msg}")
+                
+                # Handle specific Telegram errors
+                if "file is too big" in error_msg.lower():
+                    logger.error(f"❌ File too large: {track_name} ({file_size:.2f} MB)")
+                    return False
+                elif "chat not found" in error_msg.lower() or "channel" in error_msg.lower():
+                    logger.error(f"❌ Channel not found or bot not admin: {channel_id}")
+                    return False
+                elif "flood" in error_msg.lower() or "too many requests" in error_msg.lower():
+                    # Rate limiting
+                    wait_time = 60 * attempt  # Wait longer for rate limits
+                    logger.warning(f"🚫 Rate limited. Waiting {wait_time}s...")
+                    await asyncio.sleep(wait_time)
+                    if attempt == max_retries:
+                        return False
+                else:
+                    # Other Telegram errors - retry
+                    if attempt < max_retries:
+                        wait_time = attempt * 10
+                        logger.info(f"⏳ Retrying in {wait_time}s...")
+                        await asyncio.sleep(wait_time)
+                    else:
+                        logger.error(f"❌ Failed after {max_retries} attempts: {track_name}")
+                        return False
+                        
+            except Exception as e:
+                logger.error(f"❌ Unexpected error on attempt {attempt}/{max_retries}: {type(e).__name__}: {e}")
+                if attempt < max_retries:
+                    wait_time = attempt * 5
+                    logger.info(f"⏳ Retrying in {wait_time}s...")
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error(f"❌ Failed after {max_retries} attempts: {track_name}")
+                    return False
+        
+        return False
     
     async def check_playlist(self, playlist_url: str):
         """Check a single playlist for new tracks"""
@@ -1080,11 +1154,13 @@ class SpotifyTelegramBot:
             
             playlist_data = self.tracks_db[playlist_url]
             new_tracks = []
+            unsent_tracks = []
             
-            # Find new tracks
+            # Find new tracks and unsent tracks
             for track in tracks:
                 track_id = track['id']
                 if track_id not in playlist_data['tracks']:
+                    # This is a completely new track
                     new_tracks.append(track)
                     playlist_data['tracks'][track_id] = {
                         'name': track['name'],
@@ -1092,6 +1168,9 @@ class SpotifyTelegramBot:
                         'added_at': datetime.now().isoformat(),
                         'sent': False
                     }
+                elif not playlist_data['tracks'][track_id].get('sent', False):
+                    # This track exists but hasn't been sent yet
+                    unsent_tracks.append(track)
             
             playlist_data['total_tracks'] = len(tracks)
             self._save_tracks_db()
@@ -1099,11 +1178,17 @@ class SpotifyTelegramBot:
             # Update config
             self.config_manager.update_playlist_check(playlist_url, len(tracks))
             
-            if new_tracks:
-                logger.info(f"🎵 Found {len(new_tracks)} new tracks")
-                await self.process_new_tracks(playlist_url, new_tracks)
+            # Combine new and unsent tracks
+            tracks_to_process = new_tracks + unsent_tracks
+            
+            if tracks_to_process:
+                if new_tracks:
+                    logger.info(f"🎵 Found {len(new_tracks)} new tracks")
+                if unsent_tracks:
+                    logger.info(f"📤 Found {len(unsent_tracks)} unsent tracks")
+                await self.process_new_tracks(playlist_url, tracks_to_process)
             else:
-                logger.info("✅ No new tracks")
+                logger.info("✅ No new or unsent tracks")
                 
         except Exception as e:
             logger.error(f"Error checking playlist: {e}", exc_info=True)
@@ -1111,6 +1196,8 @@ class SpotifyTelegramBot:
     async def process_new_tracks(self, playlist_url: str, tracks: List[dict]):
         """Download and send new tracks"""
         try:
+            logger.info(f"🎬 Processing {len(tracks)} tracks for {playlist_url}")
+            
             # Check if ARL is configured
             if not self.deezer_arl:
                 logger.error("❌ Deezer ARL not configured!")
@@ -1127,12 +1214,33 @@ class SpotifyTelegramBot:
                         pass
                 return
             
+            # Get channel ID for this playlist
+            channel_id = self.config_manager.get_playlist_channel(playlist_url)
+            if not channel_id:
+                logger.error(f"❌ No channel configured for playlist: {playlist_url}")
+                # Notify admin
+                for admin_id in self.admin_ids:
+                    try:
+                        bot = Bot(token=self.telegram_token)
+                        await bot.send_message(
+                            chat_id=admin_id,
+                            text=f"❌ خطا: چنلی برای این پلی‌لیست تنظیم نشده است!\n\n"
+                                 f"URL: {playlist_url}\n\n"
+                                 f"از دستور /linkplaylist برای تنظیم چنل استفاده کنید."
+                        )
+                    except:
+                        pass
+                return
+            
+            logger.info(f"📺 Target channel: {channel_id}")
+            
             tracks_to_download = [
                 (track['name'], ', '.join(track['artists']))
                 for track in tracks
             ]
             
             logger.info(f"📥 Downloading {len(tracks_to_download)} tracks...")
+            logger.info(f"📋 Tracks to download: {[t[0] for t in tracks_to_download]}")
             
             # Download tracks
             downloaded = await asyncio.to_thread(
@@ -1144,31 +1252,47 @@ class SpotifyTelegramBot:
             
             if not downloaded:
                 logger.warning("⚠️ No tracks were downloaded")
+                logger.warning("⚠️ This might be due to Deezer download issues or ARL problems")
                 return
             
-            logger.info(f"✅ Downloaded {len(downloaded)} tracks")
+            logger.info(f"✅ Downloaded {len(downloaded)} tracks: {[t[0] for t in downloaded]}")
             
             # Send to channel
             playlist_data = self.tracks_db[playlist_url]
             success_count = 0
+            failed_count = 0
+            failed_tracks = []
             
-            # Get channel ID for this playlist
-            channel_id = self.config_manager.get_playlist_channel(playlist_url)
-            if not channel_id:
-                logger.error(f"❌ No channel configured for playlist: {playlist_url}")
-                return
+            logger.info(f"📤 Starting to send {len(downloaded)} tracks to channel {channel_id}...")
             
             for track_name, artist_name, file_path in downloaded:
-                if await self.send_audio_to_channel(file_path, track_name, artist_name, channel_id):
+                logger.info(f"📤 Sending: {track_name} - {artist_name}")
+                logger.info(f"📁 File path: {file_path}")
+                
+                # Try to send with retry mechanism
+                send_success = await self.send_audio_to_channel(
+                    file_path, track_name, artist_name, channel_id
+                )
+                
+                if send_success:
                     # Mark as sent
                     for track in tracks:
                         if track['name'] == track_name:
                             playlist_data['tracks'][track['id']]['sent'] = True
                             playlist_data['sent_tracks'] += 1
                             success_count += 1
+                            logger.info(f"✅ Marked as sent: {track_name}")
                             break
                     
-                    await asyncio.sleep(2)  # Rate limiting
+                    # Rate limiting between successful sends
+                    await asyncio.sleep(3)
+                else:
+                    failed_count += 1
+                    failed_tracks.append(f"{track_name} - {artist_name}")
+                    logger.error(f"❌ Failed to send after all retries: {track_name}")
+                    
+                    # Still wait a bit before next track
+                    await asyncio.sleep(5)
                 
                 # Clean up downloaded file
                 try:
@@ -1176,10 +1300,41 @@ class SpotifyTelegramBot:
                         os.remove(file_path)
                         logger.info(f"🗑️ Cleaned up: {file_path}")
                 except Exception as e:
-                    logger.warning(f"Failed to delete file {file_path}: {e}")
+                    logger.warning(f"⚠️ Failed to delete file {file_path}: {e}")
             
+            # Save database
             self._save_tracks_db()
-            logger.info(f"✅ Successfully sent {success_count}/{len(downloaded)} tracks to {channel_id}")
+            
+            # Log summary
+            logger.info(f"📊 Summary: {success_count} succeeded, {failed_count} failed out of {len(downloaded)} tracks")
+            
+            if success_count > 0:
+                logger.info(f"✅ Successfully sent {success_count} tracks to {channel_id}")
+            
+            # Notify admin about failures if any
+            if failed_count > 0:
+                logger.error(f"❌ Failed to send {failed_count} tracks")
+                error_message = (
+                    f"⚠️ گزارش ارسال آهنگ‌ها:\n\n"
+                    f"✅ موفق: {success_count}\n"
+                    f"❌ ناموفق: {failed_count}\n\n"
+                    f"آهنگ‌های ناموفق:\n"
+                )
+                for track in failed_tracks[:5]:  # Only show first 5
+                    error_message += f"• {track}\n"
+                
+                if len(failed_tracks) > 5:
+                    error_message += f"\n... و {len(failed_tracks) - 5} آهنگ دیگر"
+                
+                for admin_id in self.admin_ids:
+                    try:
+                        bot = Bot(token=self.telegram_token)
+                        await bot.send_message(
+                            chat_id=admin_id,
+                            text=error_message
+                        )
+                    except Exception as notify_error:
+                        logger.error(f"Failed to notify admin {admin_id}: {notify_error}")
             
         except Exception as e:
             logger.error(f"Error processing tracks: {e}", exc_info=True)
@@ -1222,10 +1377,54 @@ class SpotifyTelegramBot:
                 logger.error(f"Error in periodic check: {e}", exc_info=True)
                 await asyncio.sleep(3600)  # Retry in 1 hour
     
+    async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Global error handler"""
+        try:
+            logger.error(f"Exception while handling an update: {context.error}", exc_info=context.error)
+            
+            # Get error details
+            error_message = str(context.error)
+            error_type = type(context.error).__name__
+            
+            # Notify user if possible
+            if update and update.effective_message:
+                try:
+                    await update.effective_message.reply_text(
+                        "❌ متأسفانه خطایی رخ داد. لطفا دوباره تلاش کنید.\n\n"
+                        "در صورت تکرار، به ادمین اطلاع دهید."
+                    )
+                except:
+                    pass
+            
+            # Notify admin for critical errors
+            critical_errors = [
+                'NetworkError', 'TimedOut', 'RetryAfter', 
+                'Conflict', 'Unauthorized'
+            ]
+            
+            if error_type in critical_errors:
+                for admin_id in self.admin_ids:
+                    try:
+                        bot = Bot(token=self.telegram_token)
+                        await bot.send_message(
+                            chat_id=admin_id,
+                            text=f"🚨 خطای حیاتی:\n\n"
+                                 f"نوع: {error_type}\n"
+                                 f"پیام: {error_message[:200]}"
+                        )
+                    except:
+                        pass
+                        
+        except Exception as e:
+            logger.error(f"Error in error handler: {e}", exc_info=True)
+    
     def run(self):
         """Run the bot"""
         # Create application
         app = Application.builder().token(self.telegram_token).build()
+        
+        # Add error handler
+        app.add_error_handler(self.error_handler)
         
         # Add handlers
         app.add_handler(CommandHandler("start", self.start_command))
